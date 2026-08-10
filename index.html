@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>眼药水提醒助手</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4a90e2">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            padding-bottom: 80px;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .drop-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .drop-item:last-child {
+            border-bottom: none;
+        }
+        
+        .drop-info {
+            flex: 1;
+        }
+        
+        .drop-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .drop-count {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .drop-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #4a90e2;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #357abd;
+        }
+        
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+        
+        .btn-danger {
+            background: #ff4757;
+            color: white;
+        }
+        
+        .btn-add {
+            width: 100%;
+            padding: 15px;
+            background: white;
+            color: #4a90e2;
+            border: 2px dashed #4a90e2;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        .countdown-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            text-align: center;
+        }
+        
+        .countdown-title {
+            font-size: 16px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        
+        .countdown-time {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .countdown-hint {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            display: flex;
+            justify-content: space-around;
+            padding: 15px 0;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            color: #666;
+            font-size: 12px;
+        }
+        
+        .nav-item.active {
+            color: #4a90e2;
+        }
+        
+        .nav-icon {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .modal-text {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 25px;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .modal-buttons .btn {
+            flex: 1;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .input-group label {
+            display: block;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+        
+        .page {
+            display: none;
+        }
+        
+        .page.active {
+            display: block;
+        }
+        
+        .history-item {
+            padding: 15px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .history-date {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .history-record {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+        
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 首页 -->
+        <div id="page-home" class="page active">
+            <div class="header">
+                <h1>💧 眼药水提醒助手</h1>
+                <p>按时滴药，保护眼睛</p>
+            </div>
+            
+            <!-- 倒计时卡片 -->
+            <div id="countdown-card" class="card countdown-card" style="display: none;">
+                <div class="countdown-title">⏱️ 等待中</div>
+                <div class="countdown-time" id="countdown-time">5:00</div>
+                <div class="countdown-hint">请稍后再滴其他眼药水</div>
+            </div>
+            
+            <!-- 眼药水列表 -->
+            <div class="card">
+                <div id="drop-list"></div>
+            </div>
+            
+            <button class="btn btn-add" onclick="showAddModal()">+ 添加眼药水</button>
+        </div>
+        
+        <!-- 历史记录页 -->
+        <div id="page-history" class="page">
+            <div class="header">
+                <h1>📋 历史记录</h1>
+            </div>
+            <div class="card">
+                <div id="history-list"></div>
+            </div>
+        </div>
+        
+        <!-- 设置页 -->
+        <div id="page-settings" class="page">
+            <div class="header">
+                <h1>⚙️ 设置</h1>
+            </div>
+            <div class="card">
+                <div id="settings-list"></div>
+            </div>
+            <button class="btn btn-secondary" style="width: 100%; margin-top: 15px;" onclick="exportData()">📤 导出数据</button>
+        </div>
+    </div>
+    
+    <!-- 底部导航 -->
+    <div class="nav-bar">
+        <div class="nav-item active" onclick="switchPage('home')">
+            <div class="nav-icon">💧</div>
+            <div>首页</div>
+        </div>
+        <div class="nav-item" onclick="switchPage('history')">
+            <div class="nav-icon">📋</div>
+            <div>历史</div>
+        </div>
+        <div class="nav-item" onclick="switchPage('settings')">
+            <div class="nav-icon">⚙️</div>
+            <div>设置</div>
+        </div>
+    </div>
+    
+    <!-- 添加眼药水弹窗 -->
+    <div id="modal-add" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">添加眼药水</div>
+            <div class="input-group">
+                <label>名称</label>
+                <input type="text" id="input-name" placeholder="如：左氧氟沙星">
+            </div>
+            <div class="input-group">
+                <label>每日次数</label>
+                <input type="number" id="input-count" placeholder="如：4" min="1" max="20">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('modal-add')">取消</button>
+                <button class="btn btn-primary" onclick="addDrop()">添加</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 提醒确认弹窗 -->
+    <div id="modal-reminder" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">是否提醒？</div>
+            <div class="modal-text">是否5分钟后提醒滴下一款药水？</div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="confirmReminder(false)">否</button>
+                <button class="btn btn-primary" onclick="confirmReminder(true)">是</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 修改次数确认弹窗 -->
+    <div id="modal-confirm-edit" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">确认修改</div>
+            <div class="modal-text">确定要修改次数吗？</div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('modal-confirm-edit')">取消</button>
+                <button class="btn btn-primary" onclick="confirmEditCount()">确认</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 修改次数弹窗 -->
+    <div id="modal-edit" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">修改每日次数</div>
+            <div class="input-group">
+                <label>每日次数</label>
+                <input type="number" id="input-edit-count" min="1" max="20">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('modal-edit')">取消</button>
+                <button class="btn btn-primary" onclick="saveEditCount()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 数据存储
+        let data = {
+            drops: [],
+            history: [],
+            countdown: null
+        };
+        
+        let countdownInterval = null;
+        let currentEditId = null;
+        let pendingDropId = null;
+        
+        // 初始化
+        function init() {
+            loadData();
+            renderDropList();
+            renderHistory();
+            renderSettings();
+            restoreCountdown();
+        }
+        
+        // 加载数据
+        function loadData() {
+            const saved = localStorage.getItem('eyeDropData');
+            if (saved) {
+                data = JSON.parse(saved);
+            }
+        }
+        
+        // 保存数据
+        function saveData() {
+            localStorage.setItem('eyeDropData', JSON.stringify(data));
+        }
+        
+        // 重置今日计数
+        function resetDailyCount() {
+            const today = new Date().toDateString();
+            const lastReset = localStorage.getItem('lastResetDate');
+            
+            if (lastReset !== today) {
+                data.drops.forEach(drop => {
+                    drop.todayCount = 0;
+                });
+                localStorage.setItem('lastResetDate', today);
+                saveData();
+            }
+        }
+        
+        // 渲染眼药水列表
+        function renderDropList() {
+            resetDailyCount();
+            const list = document.getElementById('drop-list');
+            
+            if (data.drops.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">💧</div>
+                        <div>还没有添加眼药水</div>
+                        <div style="font-size: 14px; margin-top: 10px;">点击下方按钮添加</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            list.innerHTML = data.drops.map(drop => `
+                <div class="drop-item">
+                    <div class="drop-info">
+                        <div class="drop-name">${drop.name}</div>
+                        <div class="drop-count">今日：${drop.todayCount}/${drop.dailyCount} 次</div>
+                    </div>
+                    <div class="drop-actions">
+                        <button class="btn btn-primary" onclick="useDrop('${drop.id}')" ${data.countdown ? 'disabled' : ''}>
+                            滴药
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 使用眼药水
+        function useDrop(dropId) {
+            if (data.countdown) {
+                alert('请等待当前倒计时结束');
+                return;
+            }
+            
+            pendingDropId = dropId;
+            showModal('modal-reminder');
+        }
+        
+        // 确认是否提醒
+        function confirmReminder(needReminder) {
+            closeModal('modal-reminder');
+            
+            const drop = data.drops.find(d => d.id === pendingDropId);
+            if (!drop) return;
+            
+            // 记录使用
+            drop.todayCount++;
+            drop.lastUsed = new Date().toISOString();
+            
+            // 添加历史记录
+            const record = {
+                time: new Date().toISOString(),
+                dropId: drop.id,
+                dropName: drop.name
+            };
+            
+            const today = new Date().toDateString();
+            let dayRecord = data.history.find(h => h.date === today);
+            if (!dayRecord) {
+                dayRecord = { date: today, records: [] };
+                data.history.unshift(dayRecord);
+            }
+            dayRecord.records.unshift(record);
+            
+            // 如果需要提醒，开始倒计时
+            if (needReminder) {
+                startCountdown();
+            }
+            
+            saveData();
+            renderDropList();
+            renderHistory();
+        }
+        
+        // 开始倒计时
+        function startCountdown() {
+            data.countdown = {
+                endTime: Date.now() + 5 * 60 * 1000
+            };
+            saveData();
+            updateCountdown();
+            countdownInterval = setInterval(updateCountdown, 1000);
+        }
+        
+        // 恢复倒计时
+        function restoreCountdown() {
+            if (data.countdown && data.countdown.endTime > Date.now()) {
+                updateCountdown();
+                countdownInterval = setInterval(updateCountdown, 1000);
+            } else {
+                data.countdown = null;
+                saveData();
+            }
+        }
+        
+        // 更新倒计时显示
+        function updateCountdown() {
+            const card = document.getElementById('countdown-card');
+            const timeEl = document.getElementById('countdown-time');
+            
+            if (!data.countdown) {
+                card.style.display = 'none';
+                return;
+            }
+            
+            const remaining = data.countdown.endTime - Date.now();
+            
+            if (remaining <= 0) {
+                // 倒计时结束
+                clearInterval(countdownInterval);
+                data.countdown = null;
+                saveData();
+                card.style.display = 'none';
+                renderDropList();
+                playReminderSound();
+                return;
+            }
+            
+            card.style.display = 'block';
+            const minutes = Math.floor(remaining / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+            timeEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // 播放提醒声音
+        function playReminderSound() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 4);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 4);
+        }
+        
+        // 显示添加弹窗
+        function showAddModal() {
+            document.getElementById('input-name').value = '';
+            document.getElementById('input-count').value = '';
+            showModal('modal-add');
+        }
+        
+        // 添加眼药水
+        function addDrop() {
+            const name = document.getElementById('input-name').value.trim();
+            const count = parseInt(document.getElementById('input-count').value);
+            
+            if (!name) {
+                alert('请输入名称');
+                return;
+            }
+            
+            if (!count || count < 1) {
+                alert('请输入有效的次数');
+                return;
+            }
+            
+            data.drops.push({
+                id: Date.now().toString(),
+                name: name,
+                dailyCount: count,
+                todayCount: 0,
+                lastUsed: null
+            });
+            
+            saveData();
+            closeModal('modal-add');
+            renderDropList();
+            renderSettings();
+        }
+        
+        // 渲染历史记录
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            
+            if (data.history.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📋</div>
+                        <div>还没有记录</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            list.innerHTML = data.history.map(day => `
+                <div class="history-item">
+                    <div class="history-date">${formatDate(day.date)}</div>
+                    ${day.records.map(record => `
+                        <div class="history-record">
+                            <span>${record.dropName}</span>
+                            <span>${formatTime(record.time)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `).join('');
+        }
+        
+        // 渲染设置
+        function renderSettings() {
+            const list = document.getElementById('settings-list');
+            
+            if (data.drops.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚙️</div>
+                        <div>还没有眼药水</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            list.innerHTML = data.drops.map(drop => `
+                <div class="drop-item">
+                    <div class="drop-info">
+                        <div class="drop-name">${drop.name}</div>
+                        <div class="drop-count">每日：${drop.dailyCount} 次</div>
+                    </div>
+                    <div class="drop-actions">
+                        <button class="btn btn-secondary" onclick="showEditModal('${drop.id}')">修改</button>
+                        <button class="btn btn-danger" onclick="deleteDrop('${drop.id}')">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 显示修改弹窗
+        function showEditModal(dropId) {
+            currentEditId = dropId;
+            const drop = data.drops.find(d => d.id === dropId);
+            document.getElementById('input-edit-count').value = drop.dailyCount;
+            showModal('modal-confirm-edit');
+        }
+        
+        // 确认修改
+        function confirmEditCount() {
+            closeModal('modal-confirm-edit');
+            showModal('modal-edit');
+        }
+        
+        // 保存修改
+        function saveEditCount() {
+            const count = parseInt(document.getElementById('input-edit-count').value);
+            
+            if (!count || count < 1) {
+                alert('请输入有效的次数');
+                return;
+            }
+            
+            const drop = data.drops.find(d => d.id === currentEditId);
+            if (drop) {
+                drop.dailyCount = count;
+                saveData();
+                closeModal('modal-edit');
+                renderDropList();
+                renderSettings();
+            }
+        }
+        
+        // 删除眼药水
+        function deleteDrop(dropId) {
+            if (confirm('确定要删除这个眼药水吗？')) {
+                data.drops = data.drops.filter(d => d.id !== dropId);
+                saveData();
+                renderDropList();
+                renderSettings();
+            }
+        }
+        
+        // 导出数据
+        function exportData() {
+            const dataStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `眼药水记录_${new Date().toLocaleDateString()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // 切换页面
+        function switchPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(`page-${page}`).classList.add('active');
+            
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            if (page === 'history') renderHistory();
+            if (page === 'settings') renderSettings();
+        }
+        
+        // 显示弹窗
+        function showModal(id) {
+            document.getElementById(id).classList.add('show');
+        }
+        
+        // 关闭弹窗
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+        
+        // 格式化日期
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            if (date.toDateString() === today.toDateString()) {
+                return '今天';
+            } else if (date.toDateString() === yesterday.toDateString()) {
+                return '昨天';
+            } else {
+                return `${date.getMonth() + 1}月${date.getDate()}日`;
+            }
+        }
+        
+        // 格式化时间
+        function formatTime(timeStr) {
+            const date = new Date(timeStr);
+            return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        }
+        
+        // 注册 Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('Service Worker 注册成功'))
+                .catch(err => console.log('Service Worker 注册失败', err));
+        }
+        
+        // 初始化
+        init();
+    </script>
+</body>
+</html>
