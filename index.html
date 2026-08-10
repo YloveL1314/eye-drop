@@ -140,26 +140,6 @@
             cursor: not-allowed;
         }
         
-        .btn-drop {
-            position: relative;
-            overflow: hidden;
-            min-width: 80px;
-        }
-        
-        .btn-drop .progress {
-            position: absolute;
-            left: 0;
-            bottom: 0;
-            height: 100%;
-            width: 0;
-            background: rgba(255, 255, 255, 0.3);
-            transition: width 1s linear;
-        }
-        
-        .btn-drop.pressing .progress {
-            width: 100%;
-        }
-        
         .btn-undo {
             background: #ff9800;
             color: white;
@@ -184,6 +164,52 @@
         .last-action-time {
             color: #333;
             font-weight: 600;
+        }
+        
+        /* 居中弹窗样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 320px;
+            width: 85%;
+            text-align: center;
+        }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .modal-buttons .btn {
+            flex: 1;
+            padding: 12px;
+            font-size: 16px;
         }
         
         .btn-secondary {
@@ -261,19 +287,6 @@
             margin-bottom: 5px;
         }
         
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-        
         .modal.show {
             display: flex;
         }
@@ -282,32 +295,28 @@
             background: white;
             border-radius: 16px;
             padding: 30px;
-            max-width: 400px;
-            width: 90%;
+            max-width: 320px;
+            width: 85%;
             text-align: center;
         }
         
         .modal-title {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 600;
-            margin-bottom: 15px;
             color: #333;
-        }
-        
-        .modal-text {
-            font-size: 16px;
-            color: #666;
             margin-bottom: 25px;
+            line-height: 1.5;
         }
         
         .modal-buttons {
             display: flex;
             gap: 15px;
-            justify-content: center;
         }
         
         .modal-buttons .btn {
             flex: 1;
+            padding: 12px;
+            font-size: 16px;
         }
         
         .input-group {
@@ -495,6 +504,38 @@
             </div>
         </div>
     </div>
+    
+    <!-- 撤销确认弹窗 -->
+    <div id="modal-confirm-undo" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">确定撤销这次滴药吗？</div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('modal-confirm-undo')">取消</button>
+                <button class="btn btn-primary" onclick="confirmUndo()">确定</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 提示弹窗（通用） -->
+    <div id="modal-alert" class="modal">
+        <div class="modal-content">
+            <div class="modal-title" id="alert-message"></div>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="closeModal('modal-alert')">确定</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 删除确认弹窗 -->
+    <div id="modal-confirm-delete" class="modal">
+        <div class="modal-content">
+            <div class="modal-title">确定要删除这个眼药水吗？</div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('modal-confirm-delete')">取消</button>
+                <button class="btn btn-danger" onclick="confirmDelete()">删除</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         // 数据存储
@@ -507,6 +548,8 @@
         let countdownInterval = null;
         let currentEditId = null;
         let pendingDropId = null;
+        let pendingUndoDropId = null;
+        let pendingDeleteId = null;
         
         // 初始化
         function init() {
@@ -645,17 +688,7 @@
                         <div class="drop-actions">
                             ${isDone ? 
                                 '<button class="btn btn-secondary" disabled style="background: #4CAF50; color: white; opacity: 0.7;">已完成</button>' :
-                                `<button class="btn btn-primary btn-drop" 
-                                    onmousedown="startPress('${drop.id}', this)" 
-                                    onmouseup="cancelPress(this)" 
-                                    onmouseleave="cancelPress(this)" 
-                                    ontouchstart="startPress('${drop.id}', this)" 
-                                    ontouchend="cancelPress(this)" 
-                                    ontouchcancel="cancelPress(this)"
-                                    ${data.countdown ? 'disabled' : ''}>
-                                    <span class="progress"></span>
-                                    <span style="position: relative; z-index: 1;">按住滴药</span>
-                                </button>`
+                                `<button class="btn btn-primary" onclick="useDrop('${drop.id}')" ${data.countdown ? 'disabled' : ''}>滴药</button>`
                             }
                         </div>
                     </div>
@@ -664,41 +697,17 @@
             }).join('');
         }
         
-        // 长按触发相关变量
-        let pressTimer = null;
-        let pressDropId = null;
-        
-        // 开始长按
-        function startPress(dropId, btn) {
-            if (data.countdown) {
-                alert('请等待当前倒计时结束');
-                return;
-            }
-            
-            pressDropId = dropId;
-            btn.classList.add('pressing');
-            
-            pressTimer = setTimeout(() => {
-                // 长按1秒后触发
-                btn.classList.remove('pressing');
-                useDrop(dropId);
-            }, 1000);
-        }
-        
-        // 取消长按（松手）
-        function cancelPress(btn) {
-            if (pressTimer) {
-                clearTimeout(pressTimer);
-                pressTimer = null;
-            }
-            btn.classList.remove('pressing');
-        }
-        
         // 撤销上次滴药
         function undoLastDrop(dropId) {
-            if (!confirm('确定要撤销这次滴药吗？')) return;
+            pendingUndoDropId = dropId;
+            showModal('modal-confirm-undo');
+        }
+        
+        // 确认撤销
+        function confirmUndo() {
+            closeModal('modal-confirm-undo');
             
-            const drop = data.drops.find(d => d.id === dropId);
+            const drop = data.drops.find(d => d.id === pendingUndoDropId);
             if (!drop) return;
             
             // 次数-1
@@ -708,7 +717,7 @@
             const today = new Date().toDateString();
             const dayRecord = data.history.find(h => h.date === today);
             if (dayRecord) {
-                const idx = dayRecord.records.findIndex(r => r.dropId === dropId);
+                const idx = dayRecord.records.findIndex(r => r.dropId === pendingUndoDropId);
                 if (idx !== -1) {
                     dayRecord.records.splice(idx, 1);
                 }
@@ -722,7 +731,7 @@
             }
             
             // 更新lastUsed
-            const todayRecords2 = dayRecord ? dayRecord.records.filter(r => r.dropId === dropId) : [];
+            const todayRecords2 = dayRecord ? dayRecord.records.filter(r => r.dropId === pendingUndoDropId) : [];
             if (todayRecords2.length > 0) {
                 drop.lastUsed = todayRecords2[0].time;
             } else {
@@ -873,6 +882,12 @@
             }
         }
         
+        // 显示提示弹窗
+        function showAlert(message) {
+            document.getElementById('alert-message').textContent = message;
+            showModal('modal-alert');
+        }
+        
         // 显示添加弹窗
         function showAddModal() {
             document.getElementById('input-name').value = '';
@@ -886,12 +901,12 @@
             const count = parseInt(document.getElementById('input-count').value);
             
             if (!name) {
-                alert('请输入名称');
+                showAlert('请输入名称');
                 return;
             }
             
             if (!count || count < 1) {
-                alert('请输入有效的次数');
+                showAlert('请输入有效的次数');
                 return;
             }
             
@@ -983,7 +998,7 @@
             const count = parseInt(document.getElementById('input-edit-count').value);
             
             if (!count || count < 1) {
-                alert('请输入有效的次数');
+                showAlert('请输入有效的次数');
                 return;
             }
             
@@ -999,12 +1014,17 @@
         
         // 删除眼药水
         function deleteDrop(dropId) {
-            if (confirm('确定要删除这个眼药水吗？')) {
-                data.drops = data.drops.filter(d => d.id !== dropId);
-                saveData();
-                renderDropList();
-                renderSettings();
-            }
+            pendingDeleteId = dropId;
+            showModal('modal-confirm-delete');
+        }
+        
+        // 确认删除
+        function confirmDelete() {
+            closeModal('modal-confirm-delete');
+            data.drops = data.drops.filter(d => d.id !== pendingDeleteId);
+            saveData();
+            renderDropList();
+            renderSettings();
         }
         
         // 导出数据
