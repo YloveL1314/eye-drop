@@ -1,0 +1,25 @@
+{
+  "name": "眼药水提醒助手",
+  "short_name": "眼药水",
+  "description": "按时滴药，保护眼睛",
+  "start_url": "/eye-drop/",
+  "scope": "/eye-drop/",
+  "display": "standalone",
+  "background_color": "#667eea",
+  "theme_color": "#4a90e2",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
