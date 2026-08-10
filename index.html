@@ -676,23 +676,29 @@
             timeEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         }
         
-        // 播放提醒声音
+        // 播放提醒声音（多次短促滴滴声）
         function playReminderSound() {
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
             
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.value = 800;
-            oscillator.type = 'sine';
-            
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 4);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 4);
+            // 播放5次短促的滴滴声
+            for (let i = 0; i < 5; i++) {
+                const startTime = audioContext.currentTime + i * 0.6; // 每0.6秒一次
+                
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 1000; // 频率1000Hz，更尖锐
+                oscillator.type = 'square'; // 方波，声音更大
+                
+                gainNode.gain.setValueAtTime(0.5, startTime); // 音量0.5
+                gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2); // 0.2秒衰减
+                
+                oscillator.start(startTime);
+                oscillator.stop(startTime + 0.2);
+            }
         }
         
         // 切换展开/收起记录
