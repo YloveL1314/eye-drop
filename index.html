@@ -140,6 +140,52 @@
             cursor: not-allowed;
         }
         
+        .btn-drop {
+            position: relative;
+            overflow: hidden;
+            min-width: 80px;
+        }
+        
+        .btn-drop .progress {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 100%;
+            width: 0;
+            background: rgba(255, 255, 255, 0.3);
+            transition: width 1s linear;
+        }
+        
+        .btn-drop.pressing .progress {
+            width: 100%;
+        }
+        
+        .btn-undo {
+            background: #ff9800;
+            color: white;
+            margin-top: 10px;
+        }
+        
+        .last-action {
+            background: #f0f9ff;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .last-action-info {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .last-action-time {
+            color: #333;
+            font-weight: 600;
+        }
+        
         .btn-secondary {
             background: #f0f0f0;
             color: #666;
@@ -469,6 +515,11 @@
             renderHistory();
             renderSettings();
             restoreCountdown();
+            
+            // 每30秒刷新一次列表（更新撤销按钮的剩余时间）
+            setInterval(() => {
+                renderDropList();
+            }, 30000);
         }
         
         // 加载数据
@@ -560,6 +611,29 @@
                 
                 const isDone = drop.todayCount >= drop.dailyCount;
                 
+                // 撤销按钮（5分钟内可撤销）
+                let undoHtml = '';
+                if (todayRecords.length > 0) {
+                    const lastRecord = todayRecords[0];
+                    const lastTime = new Date(lastRecord.time);
+                    const now = new Date();
+                    const diffMs = now - lastTime;
+                    const diffMins = diffMs / 60000;
+                    
+                    if (diffMins < 5) {
+                        const remainSecs = Math.floor(5 - diffMins);
+                        undoHtml = `
+                            <div class="last-action">
+                                <div class="last-action-info">
+                                    上次：<span class="last-action-time">${lastRecord.dropName}</span>
+                                    <br>${remainSecs}分钟内可撤销
+                                </div>
+                                <button class="btn btn-undo" onclick="undoLastDrop('${drop.id}')">撤销</button>
+                            </div>
+                        `;
+                    }
+                }
+                
                 return `
                     <div class="drop-item">
                         <div class="drop-info">
@@ -571,21 +645,106 @@
                         <div class="drop-actions">
                             ${isDone ? 
                                 '<button class="btn btn-secondary" disabled style="background: #4CAF50; color: white; opacity: 0.7;">已完成</button>' :
-                                `<button class="btn btn-primary" onclick="useDrop('${drop.id}')" ${data.countdown ? 'disabled' : ''}>滴药</button>`
+                                `<button class="btn btn-primary btn-drop" 
+                                    onmousedown="startPress('${drop.id}', this)" 
+                                    onmouseup="cancelPress(this)" 
+                                    onmouseleave="cancelPress(this)" 
+                                    ontouchstart="startPress('${drop.id}', this)" 
+                                    ontouchend="cancelPress(this)" 
+                                    ontouchcancel="cancelPress(this)"
+                                    ${data.countdown ? 'disabled' : ''}>
+                                    <span class="progress"></span>
+                                    <span style="position: relative; z-index: 1;">按住滴药</span>
+                                </button>`
                             }
                         </div>
                     </div>
+                    ${undoHtml}
                 `;
             }).join('');
         }
         
-        // 使用眼药水
-        function useDrop(dropId) {
+        // 长按触发相关变量
+        let pressTimer = null;
+        let pressDropId = null;
+        
+        // 开始长按
+        function startPress(dropId, btn) {
             if (data.countdown) {
                 alert('请等待当前倒计时结束');
                 return;
             }
             
+            pressDropId = dropId;
+            btn.classList.add('pressing');
+            
+            pressTimer = setTimeout(() => {
+                // 长按1秒后触发
+                btn.classList.remove('pressing');
+                useDrop(dropId);
+            }, 1000);
+        }
+        
+        // 取消长按（松手）
+        function cancelPress(btn) {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+            btn.classList.remove('pressing');
+        }
+        
+        // 撤销上次滴药
+        function undoLastDrop(dropId) {
+            if (!confirm('确定要撤销这次滴药吗？')) return;
+            
+            const drop = data.drops.find(d => d.id === dropId);
+            if (!drop) return;
+            
+            // 次数-1
+            drop.todayCount--;
+            
+            // 删除最后一条记录
+            const today = new Date().toDateString();
+            const dayRecord = data.history.find(h => h.date === today);
+            if (dayRecord) {
+                const idx = dayRecord.records.findIndex(r => r.dropId === dropId);
+                if (idx !== -1) {
+                    dayRecord.records.splice(idx, 1);
+                }
+                // 如果今天没有记录了，删除这一天
+                if (dayRecord.records.length === 0) {
+                    const dayIdx = data.history.findIndex(h => h.date === today);
+                    if (dayIdx !== -1) {
+                        data.history.splice(dayIdx, 1);
+                    }
+                }
+            }
+            
+            // 更新lastUsed
+            const todayRecords2 = dayRecord ? dayRecord.records.filter(r => r.dropId === dropId) : [];
+            if (todayRecords2.length > 0) {
+                drop.lastUsed = todayRecords2[0].time;
+            } else {
+                drop.lastUsed = null;
+            }
+            
+            // 如果有倒计时，取消
+            if (data.countdown) {
+                data.countdown = null;
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+            }
+            
+            saveData();
+            renderDropList();
+            updateCountdown();
+        }
+        
+        // 使用眼药水
+        function useDrop(dropId) {
             pendingDropId = dropId;
             showModal('modal-reminder');
         }
