@@ -1,30 +1,604 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <title>测试照片加载</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>💖 妙妙七夕快乐 💖</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #0a0a1a; font-family: 'Georgia', serif; color: #fff; touch-action: none; }
+#canvas3d { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+#loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a1a; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; transition: opacity 0.8s ease; }
+#loading h1 { font-size: 2em; background: linear-gradient(135deg, #ffd700, #ff69b4, #ffd700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px; }
+#loading .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,182,193,0.2); border-top-color: #ff69b4; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#gestureStatus { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; font-size: 14px; padding: 8px 16px; border-radius: 20px; background: rgba(20,10,40,0.8); border: 1px solid rgba(255,182,193,0.3); transition: all 0.3s ease; pointer-events: none; white-space: nowrap; max-width: 90%; text-align: center; }
+#gestureStatus.ready { border-color: rgba(100,255,100,0.6); color: #90ee90; }
+#gestureStatus.error { border-color: rgba(255,100,100,0.6); color: #ffb0b0; }
+@media (max-width: 768px) { #loading h1 { font-size: 1.5em; } #gestureStatus { font-size: 12px; padding: 6px 12px; bottom: 10px; } }
+</style>
 </head>
 <body>
-    <h1>测试照片是否能加载</h1>
-    <div id="test"></div>
+<div id="loading"><h1>💖 Loading Memories...</h1><div class="spinner"></div></div>
+<canvas id="canvas3d"></canvas>
+<div id="gestureStatus">⏳ 正在加载手势...</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+// 💡 请根据你实际放入 photos 文件夹的照片数量修改此值（建议 120~150）
+const PHOTO_COUNT = 150; 
+const HEART_SCALE = 3.5;
+const EXPLOSION_RADIUS = 18;
+const LERP_SPEED = 0.025;
+const HEARTBEAT_SPEED = 1.2;
+const HEARTBEAT_AMPLITUDE = 0.06;
+const PARTICLE_COUNT = isMobile ? 1000 : 1500;
+const ROSE_GOLD = new THREE.Color(0.95, 0.72, 0.60);
+const CLICK_TIME = 200, CLICK_DIST = 10, ZOOM_MIN = 6, ZOOM_MAX = 20, PHOTO_SCALE = 2.5, PHOTO_CENTER_DIST = 5;
+const PHOTO_SIZE = 0.6;
+
+const canvas = document.getElementById('canvas3d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060614);
+scene.fog = new THREE.FogExp2(0x060614, 0.015);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 12);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth * 0.75, window.innerHeight * 0.75), 0.8, 0.4, 0.85);
+bloomPass.layers = 1;
+composer.addPass(bloomPass);
+
+scene.add(new THREE.AmbientLight(0x332244, 0.6));
+const ml = new THREE.DirectionalLight(0xffeedd, 1.2); ml.position.set(5, 8, 5); scene.add(ml);
+scene.add(new THREE.DirectionalLight(0xff69b4, 0.4).translateX(-5).translateY(-3).translateZ(3));
+const coreLight = new THREE.PointLight(0xff69b4, 3, 15); scene.add(coreLight);
+const coreLight2 = new THREE.PointLight(0xffd700, 1.5, 10); scene.add(coreLight2);
+
+// ============ 优化：真正的 3D 立体心形表面分布 ============
+function genHeartPos(n) {
+  const pos = [], s = HEART_SCALE / 3.5;
+  const MAX_DEPTH = 1.2 * s; // 心形最大厚度
+  
+  for (let i = 0; i < n; i++) {
+    // 1. 均匀分布在 0~2Pi 的轮廓线上，使用黄金比例打乱避免对齐
+    const t = ((i * 0.618033988749895) % 1) * Math.PI * 2;
+    const su = Math.sin(t);
+    const hx = 16 * su * su * su;
+    const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
     
-    <script>
-        const PHOTO_COUNT = 150;
-        const testDiv = document.getElementById('test');
-        
-        for (let i = 1; i <= PHOTO_COUNT; i++) {
-            const img = document.createElement('img');
-            img.src = `photos/${i}.jpg`;
-            img.style.width = '100px';
-            img.style.height = '100px';
-            img.style.margin = '5px';
-            img.onload = () => {
-                console.log(`✅ 照片 ${i} 加载成功`);
-                testDiv.appendChild(img);
-            };
-            img.onerror = () => {
-                console.error(`❌ 照片 ${i} 加载失败`);
-            };
+    const x = hx * 0.18 * s;
+    const y = (hy * 0.18 + 0.3) * s;
+    
+    // 2. 计算当前点到心形中心的归一化距离 (0~1)
+    const maxR = Math.hypot(16, 13 + 5 + 2 + 1); 
+    const currentR = Math.hypot(hx, hy);
+    const normalizedDist = Math.min(currentR / maxR, 1.0);
+    
+    // 3. 膨胀系数：中心最厚(1)，边缘最薄(0)，使用平滑曲线
+    const bulge = Math.pow(1.0 - normalizedDist, 1.5); 
+    
+    // 4. Z轴厚度：越靠中心越鼓起，边缘收拢为0（前后闭合）
+    // 使用 i/n 的正弦波让照片在前后之间交错分布，形成立体感
+    const zSign = Math.sin(i * 2.39996322); // 黄金角弧度，确保前后交错均匀
+    const z = MAX_DEPTH * bulge * zSign;
+    
+    pos.push({ vec: new THREE.Vector3(x, y, z), isFront: zSign > 0 };
+  }
+  return pos;
+}
+
+const texLoader = new THREE.TextureLoader();
+function makePlaceholder(i) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d');
+  const h1 = (i * 13 + 300) % 360, h2 = (h1 + 40) % 360;
+  const g = x.createLinearGradient(0, 0, 256, 256);
+  g.addColorStop(0, `hsl(${h1},60%,55%)`); g.addColorStop(1, `hsl(${h2},70%,45%)`);
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  x.fillStyle = 'rgba(255,255,255,0.9)'; x.font = 'bold 48px Georgia';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(`${i+1}`, 128, 120); x.font = '28px serif'; x.fillText('💖', 128, 180);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+function loadRealTex(i, mesh) {
+  const paths = [`photos/${i+1}.jpg`,`photos/${i+1}.png`,`photos/${i+1}.jpeg`,`photos/photo_${i+1}.jpg`,`photos/IMG_${String(i+1).padStart(4,'0')}.jpg`];
+  function tryLoad(index) {
+    if (index >= paths.length) return;
+    texLoader.load(paths[index], t => { 
+      t.colorSpace = THREE.SRGBColorSpace; 
+      t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      mesh.material.map = t; 
+      mesh.material.needsUpdate = true; 
+    }, undefined, () => tryLoad(index + 1));
+  }
+  tryLoad(0);
+}
+
+function loadHDTex(photoIndex, mesh) {
+  const i = photoIndex + 1;
+  const hdPaths = [`photos/${i}_hd.jpg`,`photos/${i}_hd.png`,`photos/hd_${i}.jpg`,`photos/${i}_hd.jpeg`];
+  function tryLoad(index) {
+    if (index >= hdPaths.length) return;
+    texLoader.load(hdPaths[index], t => { 
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      mesh.material.map = t; 
+      mesh.material.needsUpdate = true;
+      mesh._isHD = true;
+    }, undefined, () => tryLoad(index + 1));
+  }
+  tryLoad(0);
+}
+
+const photoGroup = new THREE.Group(); scene.add(photoGroup);
+const photos = [], heartPositions = genHeartPos(PHOTO_COUNT);
+const frameGeo = new THREE.BoxGeometry(PHOTO_SIZE * 1.15, PHOTO_SIZE * 1.15, 0.06);
+const frameMat = new THREE.MeshStandardMaterial({ color: ROSE_GOLD, metalness: 0.92, roughness: 0.15 });
+const photoGeo = new THREE.PlaneGeometry(PHOTO_SIZE, PHOTO_SIZE);
+
+for (let i = 0; i < PHOTO_COUNT; i++) {
+  const g = new THREE.Group();
+  g.layers.enable(1);
+  g.add(new THREE.Mesh(frameGeo, frameMat.clone()));
+  const pm = new THREE.Mesh(photoGeo, new THREE.MeshStandardMaterial({ map: makePlaceholder(i), metalness: 0.05, roughness: 0.2 }));
+  pm.position.z = 0.035; g.add(pm);
+  const bm = new THREE.Mesh(photoGeo, new THREE.MeshStandardMaterial({ color: 0x1a1a2e, metalness: 0.3, roughness: 0.7 }));
+  bm.position.z = -0.035; bm.rotation.y = Math.PI; g.add(bm);
+  
+  const posData = heartPositions[i]; 
+  g.position.copy(posData.vec);
+  
+  // 优化：照片法线朝外，贴合立体心形表面
+  const lookTarget = posData.vec.clone().normalize().multiplyScalar(10);
+  // 如果在背面，朝向反向
+  if (!posData.isFront) {
+      lookTarget.negate();
+  }
+  lookTarget.add(posData.vec); // 稍微修正让边缘更平滑
+  g.lookAt(lookTarget);
+
+  photos.push({ 
+    mesh: g, photoMesh: pm, heartPos: posData.vec.clone(), heartQuat: g.quaternion.clone(), 
+    explodedPos: new THREE.Vector3(), explodedQuat: new THREE.Quaternion(), 
+    velocity: new THREE.Vector3(), angularVel: new THREE.Vector3(), 
+    floatOffset: Math.random() * Math.PI * 2, floatSpeed: 0.3 + Math.random() * 0.5, 
+    floatAmplitude: 0.02 + Math.random() * 0.03, zoomScale: 1, isCentered: false, 
+    centerTarget: new THREE.Vector3(), centerQuat: new THREE.Quaternion(),
+    tempVec: new THREE.Vector3()
+  });
+  photoGroup.add(g);
+}
+setTimeout(() => photos.forEach((p, i) => setTimeout(() => loadRealTex(i, p.photoMesh), i * 50)), 500);
+
+const pGeo = new THREE.BufferGeometry();
+const pPos = new Float32Array(PARTICLE_COUNT * 3), pSiz = new Float32Array(PARTICLE_COUNT), pCol = new Float32Array(PARTICLE_COUNT * 3);
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1), r = 4 + Math.random() * 12;
+  pPos[i*3] = r * Math.sin(ph) * Math.cos(th); pPos[i*3+1] = r * Math.sin(ph) * Math.sin(th); pPos[i*3+2] = r * Math.cos(ph);
+  pSiz[i] = Math.random() * 3 + 0.5;
+  const c = Math.random();
+  if (c < 0.5) { pCol[i*3]=1;pCol[i*3+1]=1;pCol[i*3+2]=1; } else if (c < 0.8) { pCol[i*3]=1;pCol[i*3+1]=0.7;pCol[i*3+2]=0.8; } else { pCol[i*3]=1;pCol[i*3+1]=0.85;pCol[i*3+2]=0.4; }
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+pGeo.setAttribute('size', new THREE.BufferAttribute(pSiz, 1));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+const pMat = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() } },
+  vertexShader: `attribute float size; attribute vec3 color; varying vec3 vC; varying float vA; uniform float uTime, uPixelRatio; void main() { vC=color; vec4 mv=modelViewMatrix*vec4(position,1.); float tw=sin(uTime*2.+position.x*3.+position.y*5.)*.5+.5; vA=.3+tw*.7; gl_PointSize=size*uPixelRatio*(80./-mv.z)*(.5+tw*.5); gl_Position=projectionMatrix*mv; }`,
+  fragmentShader: `varying vec3 vC; varying float vA; void main() { float d=length(gl_PointCoord-.5); if(d>.5)discard; gl_FragColor=vec4(vC,smoothstep(.5,.0,d)*vA); }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+const particles = new THREE.Points(pGeo, pMat);
+particles.layers.enable(1);
+scene.add(particles);
+
+const glowMat = new THREE.ShaderMaterial({ uniforms: { uTime:{value:0}, uC1:{value:new THREE.Color(0xff69b4)}, uC2:{value:new THREE.Color(0xffd700)} },
+  vertexShader: `varying vec3 vN,vV; void main(){vN=normalize(normalMatrix*normal);vec4 m=modelViewMatrix*vec4(position,1.);vV=m.xyz;gl_Position=projectionMatrix*m;}`,
+  fragmentShader: `uniform float uTime;uniform vec3 uC1,uC2;varying vec3 vN,vV;void main(){float f=pow(1.-abs(dot(normalize(vV),vN)),2.);float p=sin(uTime*3.)*.3+.7;gl_FragColor=vec4(mix(uC1,uC2,sin(uTime*1.5)*.5+.5),f*p*.8);}`,
+  transparent: true, depthWrite: false, side: THREE.FrontSide, blending: THREE.AdditiveBlending });
+const coreGlow = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), glowMat);
+coreGlow.layers.enable(1);
+scene.add(coreGlow);
+
+let state = 'heart', explosionProgress = 0, targetExplosion = 0;
+let handPosition = { x: 0, y: 0 }, cameraTarget = { x: 0, y: 0 };
+const clock = new THREE.Clock();
+let mediaPipeReady = false, frameCount = 0, currentStream = null;
+const touch = { active: false, dragging: false, pinching: false, startTime: 0, startPos: {x:0,y:0}, pinchDist: 0, initZoom: 12, zoom: 12, rot: {x:0,y:0}, lastRot: {x:0,y:0} };
+const raycaster = new THREE.Raycaster(), mouse2 = new THREE.Vector2();
+
+function resetZoom() { 
+  photos.forEach(p => { 
+    if (p.isCentered) {
+      scene.remove(p.mesh);
+      photoGroup.add(p.mesh);
+    }
+    p.zoomScale = 1; 
+    p.isCentered = false;
+    if (p._originalMaterial) {
+      const matToDispose = p.photoMesh.material;
+      p.photoMesh.material = p._originalMaterial;
+      p._originalMaterial.roughness = 0.2; 
+      matToDispose.dispose(); 
+      delete p._originalMaterial;
+    }
+    p.mesh.renderOrder = 0;
+    p.mesh.layers.enable(1);
+    if (p.photoMesh._isHD) {
+      loadRealTex(photos.indexOf(p), p.photoMesh);
+      p.photoMesh._isHD = false;
+    }
+  }); 
+}
+
+function triggerExplosion() {
+  if (state === 'exploding') return; state = 'exploding'; targetExplosion = 1; resetZoom();
+  photos.forEach(p => { const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1), r=EXPLOSION_RADIUS*(.5+Math.random()*.5); p.explodedPos.set(r*Math.sin(ph)*Math.cos(th), r*Math.sin(ph)*Math.sin(th), r*Math.cos(ph)*.5); p.explodedQuat.setFromEuler(new THREE.Euler(Math.random()*Math.PI*2, Math.random()*Math.PI*2, Math.random()*Math.PI*2)); p.angularVel.set((Math.random()-.5)*.02, (Math.random()-.5)*.02, (Math.random()-.5)*.02); p.velocity.copy(p.explodedPos.clone().normalize()).multiplyScalar(.3+Math.random()*.2); });
+}
+function triggerContraction() { if (state === 'contracting') return; state = 'contracting'; targetExplosion = 0; resetZoom(); photos.forEach(p => { p.velocity.set(0,0,0); p.angularVel.set(0,0,0); }); }
+
+function touchDist(t1, t2) { return Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY); }
+function getPhotoAt(cx, cy) {
+  mouse2.x = (cx / window.innerWidth) * 2 - 1; mouse2.y = -(cy / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse2, camera);
+  const meshes = []; photos.forEach(p => p.mesh.children.forEach(c => meshes.push(c)));
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (hits.length > 0) { const obj = hits[0].object; for (const p of photos) if (p.mesh.children.includes(obj)) return p; }
+  return null;
+}
+function calcCenterTarget() {
+  const camForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const worldPos = camera.position.clone().add(camForward.multiplyScalar(PHOTO_CENTER_DIST));
+  const tempObj = new THREE.Object3D(); tempObj.position.copy(worldPos); tempObj.lookAt(camera.position);
+  return { pos: worldPos, quat: tempObj.quaternion.clone() };
+}
+
+canvas.addEventListener('touchstart', e => { e.preventDefault();
+  if (e.touches.length === 1) { touch.active = true; touch.dragging = false; touch.pinching = false; touch.startTime = Date.now(); touch.startPos = { x: e.touches[0].clientX, y: e.touches[0].clientY }; touch.lastRot = { ...touch.rot }; }
+  else if (e.touches.length === 2) { touch.pinching = true; touch.active = false; touch.pinchDist = touchDist(e.touches[0], e.touches[1]); touch.initZoom = touch.zoom; }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => { e.preventDefault();
+  if (touch.pinching && e.touches.length === 2) {
+    const d = touchDist(e.touches[0], e.touches[1]);
+    const ratio = d / touch.pinchDist;
+    const centeredPhoto = photos.find(p => p.isCentered);
+    if (centeredPhoto) {
+      centeredPhoto.zoomScale = Math.max(1.5, Math.min(5, PHOTO_SCALE * ratio));
+    } else {
+      touch.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, touch.initZoom / ratio));
+    }
+  }
+  else if (touch.active && e.touches.length === 1) { 
+    const dx = e.touches[0].clientX - touch.startPos.x, dy = e.touches[0].clientY - touch.startPos.y; 
+    if (Math.hypot(dx, dy) > CLICK_DIST) { 
+      touch.dragging = true; 
+      touch.rot.y = touch.lastRot.y + dx * 0.005; 
+      touch.rot.x = Math.max(-Math.PI/3, Math.min(Math.PI/3, touch.lastRot.x + dy * 0.005)); 
+      resetZoom(); 
+    } 
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => { e.preventDefault();
+  if (touch.active && !touch.dragging && Date.now() - touch.startTime < CLICK_TIME) {
+    const hit = getPhotoAt(touch.startPos.x, touch.startPos.y);
+    if (hit) {
+      resetZoom();
+      hit.isCentered = true; hit.zoomScale = PHOTO_SCALE;
+      photoGroup.remove(hit.mesh);
+      scene.add(hit.mesh);
+      const t = calcCenterTarget(); hit.centerTarget.copy(t.pos); hit.centerQuat.copy(t.quat);
+      
+      const originalMat = hit.photoMesh.material;
+      hit.photoMesh.material = new THREE.MeshBasicMaterial({
+        map: originalMat.map,
+        color: 0xffffff
+      });
+      hit.photoMesh.material.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      hit._originalMaterial = originalMat;
+      hit.mesh.renderOrder = 999;
+      hit.mesh.layers.disable(1);
+      const photoIndex = photos.indexOf(hit);
+      loadHDTex(photoIndex, hit.photoMesh);
+    } else {
+      resetZoom();
+    }
+  }
+  if (e.touches.length === 0) { touch.active = false; touch.dragging = false; touch.pinching = false; }
+  else if (e.touches.length === 1) { touch.pinching = false; touch.active = true; touch.startTime = Date.now(); touch.startPos = { x: e.touches[0].clientX, y: e.touches[0].clientY }; touch.lastRot = { ...touch.rot }; }
+}, { passive: false });
+
+let mouseDown = false, mouseStartTime = 0, mouseStartPos = {x:0,y:0}, mouseDragged = false;
+canvas.addEventListener('mousedown', e => { mouseDown = true; mouseDragged = false; mouseStartTime = Date.now(); mouseStartPos = {x:e.clientX, y:e.clientY}; touch.lastRot = {...touch.rot}; });
+canvas.addEventListener('mousemove', e => {
+  if (!mouseDown) return;
+  const dx = e.clientX - mouseStartPos.x, dy = e.clientY - mouseStartPos.y;
+  if (Math.hypot(dx,dy) > CLICK_DIST) { 
+    mouseDragged = true; touch.dragging = true; 
+    touch.rot.y = touch.lastRot.y + dx*0.005; 
+    touch.rot.x = Math.max(-Math.PI/3, Math.min(Math.PI/3, touch.lastRot.x + dy*0.005)); 
+    resetZoom(); 
+  }
+});
+canvas.addEventListener('mouseup', e => {
+  if (mouseDown && !mouseDragged && Date.now() - mouseStartTime < CLICK_TIME) {
+    const hit = getPhotoAt(e.clientX, e.clientY);
+    if (hit) { 
+      resetZoom(); 
+      hit.isCentered = true; hit.zoomScale = PHOTO_SCALE; 
+      photoGroup.remove(hit.mesh);
+      scene.add(hit.mesh);
+      const t = calcCenterTarget(); hit.centerTarget.copy(t.pos); hit.centerQuat.copy(t.quat);
+      
+      const originalMat = hit.photoMesh.material;
+      hit.photoMesh.material = new THREE.MeshBasicMaterial({
+        map: originalMat.map,
+        color: 0xffffff
+      });
+      hit.photoMesh.material.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      hit._originalMaterial = originalMat;
+      hit.mesh.renderOrder = 999;
+      hit.mesh.layers.disable(1);
+      const photoIndex = photos.indexOf(hit);
+      loadHDTex(photoIndex, hit.photoMesh);
+    }
+    else resetZoom();
+  }
+  mouseDown = false; mouseDragged = false; touch.dragging = false;
+});
+
+canvas.addEventListener('wheel', e => { e.preventDefault(); touch.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, touch.zoom + e.deltaY * 0.01)); }, { passive: false });
+
+setTimeout(() => { document.getElementById('loading').style.opacity = '0'; setTimeout(() => document.getElementById('loading').style.display = 'none', 800); }, 500);
+initMediaPipeWithRetry();
+
+const audio = new Audio();
+audio.volume = 0.5;
+let playlist = [];
+let currentSongIndex = 0;
+let musicLoading = true;
+let musicReadyResolve = null;
+const musicReady = new Promise(resolve => { musicReadyResolve = resolve; });
+
+async function initMusic() {
+  const maxSongs = 20;
+  for (let i = 1; i <= maxSongs; i++) {
+    const paths = [`music/${i}.mp3`, `music/${i}.m4a`, `music/${i}.ogg`];
+    for (const path of paths) {
+      try {
+        const r = await fetch(path, { method: 'HEAD' });
+        if (r.ok) { playlist.push(path); break; }
+      } catch (e) {}
+    }
+  }
+  if (playlist.length > 0) {
+    playlist.sort(() => Math.random() - 0.5);
+    playSong(0);
+  }
+  musicLoading = false;
+  musicReadyResolve();
+}
+
+function playSong(index) {
+  if (playlist.length === 0) return;
+  currentSongIndex = index % playlist.length;
+  audio.src = playlist[currentSongIndex];
+  audio.play().catch(() => {});
+}
+
+audio.addEventListener('ended', () => {
+  currentSongIndex++;
+  if (currentSongIndex >= playlist.length) {
+    playlist.sort(() => Math.random() - 0.5);
+    currentSongIndex = 0;
+  }
+  playSong(currentSongIndex);
+});
+
+function startMusicOnInteraction() {
+  if (musicLoading) {
+    musicReady.then(() => {
+      if (playlist.length > 0) {
+        audio.play().then(() => {
+          document.removeEventListener('touchstart', startMusicOnInteraction);
+          document.removeEventListener('click', startMusicOnInteraction);
+        }).catch(() => {});
+      }
+    });
+  } else {
+    if (playlist.length > 0) {
+      audio.play().then(() => {
+        document.removeEventListener('touchstart', startMusicOnInteraction);
+        document.removeEventListener('click', startMusicOnInteraction);
+      }).catch(() => {});
+    }
+  }
+}
+document.addEventListener('touchstart', startMusicOnInteraction);
+document.addEventListener('click', startMusicOnInteraction);
+
+initMusic();
+function closeCamera() { if (currentStream) { currentStream.getTracks().forEach(t => t.stop()); currentStream = null; } }
+
+function waitForGlobal(name, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    function check() {
+      if (window[name]) resolve(window[name]);
+      else if (Date.now() - start > timeout) reject({type: 'model_timeout'});
+      else setTimeout(check, 200);
+    }
+    check();
+  });
+}
+
+async function initMediaPipeWithRetry() {
+  const s = document.getElementById('gestureStatus'); let retries = 0; const delays = [2000, 5000, 10000];
+  async function attempt() {
+    closeCamera();
+    try { await initMediaPipe(); s.textContent = '✅ 手势已就绪'; s.className = 'ready'; setTimeout(() => { s.style.opacity = '0'; setTimeout(() => s.style.display = 'none', 500); }, 3000); }
+    catch (e) {
+      console.error('MediaPipe error:', e); retries++;
+      let msg = '';
+      if (e.type === 'camera_denied') { s.className = 'error'; s.textContent = '请在浏览器设置中允许摄像头权限'; return; }
+      else if (e.type === 'camera_timeout') msg = '摄像头请求超时';
+      else if (e.type === 'model_timeout') msg = '手势模型加载超时';
+      else if (e.type === 'not_supported') { s.className = 'error'; s.textContent = '当前浏览器不支持，请使用Chrome或Safari'; return; }
+      else msg = e.message || '未知错误';
+      if (retries <= 3) { s.textContent = `${msg}，${delays[retries-1]/1000}秒后重试...`; setTimeout(attempt, delays[retries-1]); }
+      else { s.textContent = `${msg}，点击重试`; s.className = 'error'; s.style.pointerEvents = 'auto'; s.onclick = () => { retries = 0; s.style.pointerEvents = 'none'; s.onclick = null; attempt(); }; }
+    }
+  }
+  attempt();
+}
+
+async function initMediaPipe() {
+  const s = document.getElementById('gestureStatus'); s.textContent = '📷 请求摄像头权限...';
+  let stream;
+  try { stream = await Promise.race([navigator.mediaDevices.getUserMedia({ video: { width: isMobile?240:320, height: isMobile?180:240, facingMode:'user' } }), new Promise((_,r) => setTimeout(() => r({type:'camera_timeout'}), 30000))]); }
+  catch (e) { if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') throw {type:'camera_denied'}; if (e.name === 'NotFoundError') throw {type:'not_supported'}; throw e; }
+  currentStream = stream; s.textContent = '⏳ 加载手势模型...';
+  
+  let Hands, Camera;
+  const waitStart = Date.now();
+  while (!window.Hands || !window.Camera) {
+    if (Date.now() - waitStart > 30000) { closeCamera(); throw {type:'model_timeout'}; }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  Hands = window.Hands;
+  Camera = window.Camera;
+  
+  s.textContent = '⏳ 初始化手势识别...';
+  try {
+    const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
+    hands.setOptions({ maxNumHands:1, modelComplexity:0, minDetectionConfidence:.3, minTrackingConfidence:.3 });
+    
+    let openCount = 0, closeCount = 0;
+    const TRIGGER_THRESHOLD = 3;
+    
+    hands.onResults(r => { 
+      if (!r.multiHandLandmarks || r.multiHandLandmarks.length === 0) {
+        openCount = 0;
+        closeCount = 0;
+        return;
+      }
+      
+      const lm = r.multiHandLandmarks[0];
+      const palmWidth = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+      if (palmWidth < 0.15) {
+        openCount = 0;
+        closeCount = 0;
+        return;
+      }
+      
+      const handCenterX = lm[9].x;
+      const handCenterY = lm[9].y;
+      if (handCenterX < 0.15 || handCenterX > 0.85 || handCenterY < 0.1 || handCenterY > 0.9) {
+        openCount = 0;
+        closeCount = 0;
+        return;
+      }
+      
+      handPosition.x = -(handCenterX - 0.5) * 2.5;
+      handPosition.y = -(handCenterY - 0.5) * 2.5;
+      
+      const tips = [8, 12, 16, 20];
+      const pips = [6, 10, 14, 18];
+      let ext = 0;
+      for (let i = 0; i < 4; i++) {
+        if (lm[tips[i]].y < lm[pips[i]].y - 0.05) ext++;
+      }
+      if (Math.abs(lm[4].x - lm[3].x) > 0.08) ext++;
+      
+      if (ext >= 4) {
+        openCount++;
+        closeCount = 0;
+        if (openCount >= TRIGGER_THRESHOLD) {
+          if (state === 'heart' || state === 'contracting') triggerExplosion();
+          openCount = 0;
         }
-    </script>
+      } else if (ext <= 1) {
+        closeCount++;
+        openCount = 0;
+        if (closeCount >= TRIGGER_THRESHOLD) {
+          if (state === 'exploded' || state === 'exploding') triggerContraction();
+          closeCount = 0;
+        }
+      } else {
+        openCount = 0;
+        closeCount = 0;
+      }
+    });
+    const video = document.createElement('video'); video.srcObject = stream; video.autoplay = true; video.playsInline = true; video.muted = true; await video.play();
+    const cam = new Camera(video, { onFrame: async () => { frameCount++; if(isMobile && frameCount%3!==0) return; await hands.send({image:video}); }, width: isMobile?240:320, height: isMobile?180:240 });
+    await cam.start(); mediaPipeReady = true;
+  } catch (e) { closeCamera(); throw {type:'init_failed', message:e.message}; }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const time = clock.getElapsedTime();
+  const hbScale = 1 + Math.sin(time*HEARTBEAT_SPEED*Math.PI*2)*HEARTBEAT_AMPLITUDE + Math.sin(time*HEARTBEAT_SPEED*Math.PI*2+.3)*HEARTBEAT_AMPLITUDE*.5;
+  explosionProgress += (targetExplosion - explosionProgress) * LERP_SPEED;
+  if (explosionProgress > .95 && targetExplosion === 1) state = 'exploded';
+  if (explosionProgress < .05 && targetExplosion === 0) state = 'heart';
+  photoGroup.rotation.x = touch.rot.x; photoGroup.rotation.y = touch.rot.y;
+  
+  photos.forEach(p => {
+    const zs = p.zoomScale;
+    if (p.isCentered) { 
+      p.mesh.position.lerp(p.centerTarget, 0.1); 
+      p.mesh.quaternion.slerp(p.centerQuat, 0.1); 
+      p.mesh.scale.setScalar(zs); 
+      return; 
+    }
+    if (explosionProgress < .01) { p.mesh.position.copy(p.heartPos); p.mesh.quaternion.copy(p.heartQuat); p.mesh.scale.setScalar(hbScale * zs); }
+    else if (explosionProgress > .99) { p.mesh.position.add(p.velocity); p.velocity.multiplyScalar(.995); p.mesh.rotation.x += p.angularVel.x; p.mesh.rotation.y += p.angularVel.y; p.mesh.rotation.z += p.angularVel.z; p.mesh.position.y += Math.sin(time*p.floatSpeed+p.floatOffset)*p.floatAmplitude; p.mesh.position.x += Math.cos(time*p.floatSpeed*.7+p.floatOffset)*p.floatAmplitude*.5; p.mesh.scale.setScalar(zs); }
+    else { 
+      p.tempVec.lerpVectors(p.heartPos, p.explodedPos, explosionProgress);
+      p.mesh.position.lerp(p.tempVec, .08); 
+      p.mesh.quaternion.slerpQuaternions(p.heartQuat, p.explodedQuat, explosionProgress); 
+      p.mesh.scale.setScalar(THREE.MathUtils.lerp(hbScale, 1, explosionProgress) * zs); 
+    }
+  });
+  
+  coreLight.intensity = 3 * hbScale * (1 - explosionProgress * .5); coreLight2.intensity = 1.5 * hbScale * (1 - explosionProgress * .5);
+  pMat.uniforms.uTime.value = time;
+  cameraTarget.x += (handPosition.x * 3 - cameraTarget.x) * .03; cameraTarget.y += (-handPosition.y * 2 - cameraTarget.y) * .03;
+  camera.position.x = cameraTarget.x; camera.position.y = cameraTarget.y; camera.position.z = touch.zoom - explosionProgress * 2; camera.lookAt(0, 0, 0);
+  if (state === 'heart') photoGroup.rotation.y += Math.sin(time * .3) * .002;
+  composer.render();
+}
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight); });
+animate();
+// 🔧 强制显示主界面（3秒后肯定能看到照片！）
+setTimeout(() => {
+    const loading = document.getElementById('loading');
+    if (loading) {
+        loading.style.opacity = '0';
+        setTimeout(() => {
+            loading.style.display = 'none';
+        }, 800);
+    }
+}, 3000);
+</script>
 </body>
 </html>
